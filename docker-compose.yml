@@ -7,13 +7,14 @@ services:
       dockerfile: Dockerfile
     container_name: product_hub_backend
     restart: always
-    env_file:
-      - .env
+    environment:
+      - DATABASE_URL=sqlite+aiosqlite:///./product_hub.db
+      - BOT_TOKEN=YOUR_TELEGRAM_BOT_TOKEN
+      - WEBAPP_URL=https://yourdomain.com
+    volumes:
+      - backend_data:/app/data
     ports:
       - "8000:8000"
-    volumes:
-      - ./backend:/app
-      - backend_data:/app/data
 
   frontend:
     build:
@@ -21,10 +22,21 @@ services:
       dockerfile: Dockerfile
     container_name: product_hub_frontend
     restart: always
+
+  nginx:
+    image: nginx:alpine
+    container_name: product_hub_nginx
+    restart: always
     ports:
-      - "5173:80"
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
+      - ./frontend/dist:/usr/share/nginx/html
+      - /etc/letsencrypt:/etc/letsencrypt:ro
     depends_on:
       - backend
+      - frontend
 
 volumes:
-  backend_data:\n
+  backend_data:

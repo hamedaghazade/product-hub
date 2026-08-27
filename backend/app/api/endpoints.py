@@ -53,4 +53,4 @@ async def export_pdf():
 @router.get("/barcode/{barcode_val}")
 async def get_barcode_preview(barcode_val: str, title: str = "کالا"):
     stream = BarcodeService.generate_barcode_image(barcode_val, title)
-    return Response(content=stream.getvalue(), media_type="image/png")\n
+    return Response(content=stream.getvalue(), media_type="image/png")

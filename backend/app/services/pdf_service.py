@@ -1,77 +1,127 @@
 import io
-from jinja2 import Template
-from weasyprint import HTML
-import base64
-from app.services.barcode_service import BarcodeService
+import os
+from typing import Sequence
+from reportlab.lib.pagesizes import A4, landscape
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image as RLImage
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib import colors
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+import arabic_reshaper
+from bidi.algorithm import get_display
 
-HTML_TEMPLATE = """
-<!DOCTYPE html>
-<html lang="fa" dir="rtl">
-<head>
-    <meta charset="UTF-8">
-    <style>
-        @page { size: A4 portrait; margin: 15mm; }
-        body { font-family: 'Vazirmatn', Tahoma, sans-serif; direction: rtl; color: #0f172a; }
-        .header { text-align: center; margin-bottom: 20px; border-bottom: 2px solid #0284c7; padding-bottom: 10px; }
-        h1 { margin: 0; font-size: 18px; color: #0f172a; }
-        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 11px; }
-        th { background-color: #0284c7; color: #ffffff; padding: 8px; border: 1px solid #cbd5e1; }
-        td { padding: 6px; border: 1px solid #cbd5e1; text-align: center; vertical-align: middle; }
-        tr:nth-child(even) { background-color: #f8fafc; }
-        .barcode-img { max-width: 140px; height: auto; }
-    </style>
-</head>
-<body>
-    <div class="header">
-        <h1>گزارش موجودی و کاتالوگ بارکد محصولات</h1>
-    </div>
-    <table>
-        <thead>
-            <tr>
-                <th>ردیف</th>
-                <th>بارکد</th>
-                <th>نام کالا</th>
-                <th>قیمت خرید</th>
-                <th>بسته</th>
-                <th>قیمت مصرف‌کننده</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for item in items %}
-            <tr>
-                <td>{{ loop.index }}</td>
-                <td><img class="barcode-img" src="data:image/png;base64,{{ item.barcode_base64 }}" /></td>
-                <td>{{ item.title }}</td>
-                <td>{{ "{:,.0f}".format(item.cost_price) }}</td>
-                <td>{{ item.units_per_pack }}</td>
-                <td>{{ "{:,.0f}".format(item.consumer_price) }}</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-</body>
-</html>
-"""
+from app.models.product import Product
+from app.services.barcode_service import BarcodeService, BarcodeConfig, BarcodeFormat
 
-class PDFService:
+class PDFExportService:
     @staticmethod
-    def generate_products_pdf(products: list) -> io.BytesIO:
-        items_payload = []
-        for p in products:
-            img_buf = BarcodeService.generate_barcode_image(p.barcode_value, p.title)
-            b64_str = base64.b64encode(img_buf.getvalue()).decode()
-            items_payload.append({
-                "title": p.title,
-                "cost_price": p.cost_price,
-                "units_per_pack": p.units_per_pack,
-                "consumer_price": p.consumer_price,
-                "barcode_base64": b64_str
-            })
+    def _reshape(text: str) -> str:
+        if not text:
+            return ""
+        reshaped = arabic_reshaper.reshape(str(text))
+        return get_display(reshaped)
 
-        template = Template(HTML_TEMPLATE)
-        rendered_html = template.render(items=items_payload)
+    @classmethod
+    def generate_products_pdf(cls, products: Sequence[Product]) -> io.BytesIO:
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=landscape(A4),
+            rightMargin=20,
+            leftMargin=20,
+            topMargin=20,
+            bottomMargin=20
+        )
 
-        pdf_io = io.BytesIO()
-        HTML(string=rendered_html).write_pdf(pdf_io)
-        pdf_io.seek(0)
-        return pdf_io\n
+        # ثبت فونت فارسی
+        font_path = "assets/fonts/Vazirmatn-Regular.ttf"
+        font_name = "Helvetica"
+        if os.path.exists(font_path):
+            try:
+                pdfmetrics.registerFont(TTFont("Vazirmatn", font_path))
+                font_name = "Vazirmatn"
+            except Exception:
+                pass
+
+        elements = []
+        styles = getSampleStyleSheet()
+        
+        title_style = ParagraphStyle(
+            'TitleStyle',
+            parent=styles['Normal'],
+            fontName=font_name,
+            fontSize=16,
+            leading=22,
+            alignment=1, # Center
+            textColor=colors.HexColor("#0F172A")
+        )
+        
+        cell_style = ParagraphStyle(
+            'CellStyle',
+            parent=styles['Normal'],
+            fontName=font_name,
+            fontSize=9,
+            leading=12,
+            alignment=1, # Center
+            textColor=colors.HexColor("#1E293B")
+        )
+
+        # تیتر گزارش
+        elements.append(Paragraph(cls._reshape("گزارش کاتالوگ و بارکد محصولات سامانه Product Hub"), title_style))
+        elements.append(Spacer(1, 15))
+
+        # ساختار جدول
+        headers = [
+            cls._reshape("تصویر بارکد"),
+            cls._reshape("حاشیه سود"),
+            cls._reshape("قیمت مصرف‌کننده"),
+            cls._reshape("تعداد در بسته"),
+            cls._reshape("قیمت خرید"),
+            cls._reshape("نام محصول"),
+            cls._reshape("ردیف")
+        ]
+
+        table_data = [headers]
+
+        for idx, prod in enumerate(products, start=1):
+            # تولید بارکد برای PDF
+            b_format = BarcodeFormat.EAN13 if len(prod.barcode_value) in (12, 13) else BarcodeFormat.CODE128
+            b_config = BarcodeConfig(
+                title=prod.title,
+                code_value=prod.barcode_value,
+                format_type=b_format,
+                barcode_height_px=70,
+                title_font_size=14,
+                code_font_size=12,
+                margin=5
+            )
+            img_stream = BarcodeService.generate_barcode_image(b_config)
+            barcode_img = RLImage(img_stream, width=120, height=45)
+
+            row = [
+                barcode_img,
+                Paragraph(f"%{prod.profit_margin_percent}", cell_style),
+                Paragraph(f"{int(prod.consumer_price):,} " + cls._reshape("تومان"), cell_style),
+                Paragraph(str(prod.units_per_pack), cell_style),
+                Paragraph(f"{int(prod.cost_price):,} " + cls._reshape("تومان"), cell_style),
+                Paragraph(cls._reshape(prod.title), cell_style),
+                Paragraph(str(idx), cell_style)
+            ]
+            table_data.append(row)
+
+        table = Table(table_data, colWidths=[130, 80, 110, 75, 110, 190, 45])
+        table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#1E293B")),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+            ('TOPPADDING', (0, 0), (-1, 0), 8),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor("#F8FAFC")]),
+        ]))
+
+        elements.append(table)
+        doc.build(elements)
+        buffer.seek(0)
+        return buffer

@@ -2,13 +2,27 @@
 <html lang="fa" dir="rtl">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>مدیریت محصولات</title>
-    <link href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css" rel="stylesheet" type="text/css" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>سیستم مدیریت محصولات و بارکد</title>
+
+    <!-- پیکربندی صحیح CSP برای محیط توسعه، وب مستقل و مینی‌اپ تلگرام -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="
+        default-src 'self' https://telegram.org https://*.telegram.org;
+        script-src 'self' 'unsafe-inline' 'unsafe-eval' https://telegram.org https://*.telegram.org;
+        style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+        font-src 'self' data: https://fonts.gstatic.com;
+        img-src 'self' data: blob: http: https:;
+        connect-src 'self' http://localhost:* ws://localhost:* http://127.0.0.1:* ws://127.0.0.1:* https://*.telegram.org;
+      "
+    />
+    <!-- اسکریپت رسمی Telegram WebApp -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
   </head>
-  <body>
+  <body class="bg-slate-50 text-slate-900 font-sans antialiased">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
-</html>\n
+</html>
