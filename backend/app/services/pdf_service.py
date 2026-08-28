@@ -1,124 +1,78 @@
 import io
-import os
-from typing import Sequence
-from reportlab.lib.pagesizes import A4, landscape
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image as RLImage
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib import colors
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
+from typing import Any, Dict, List
 import arabic_reshaper
 from bidi.algorithm import get_display
-
-from app.models.product import Product
-from app.services.barcode_service import BarcodeService, BarcodeConfig, BarcodeFormat
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.platypus import Image as ReportLabImage, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from app.services.barcode_service import BarcodeService
 
 class PDFExportService:
     @staticmethod
-    def _reshape(text: str) -> str:
+    def _fix_text(text: str) -> str:
         if not text:
             return ""
-        reshaped = arabic_reshaper.reshape(str(text))
-        return get_display(reshaped)
+        return get_display(arabic_reshaper.reshape(str(text)))
 
     @classmethod
-    def generate_products_pdf(cls, products: Sequence[Product]) -> io.BytesIO:
+    def generate_products_catalog(cls, products: List[Dict[str, Any]]) -> io.BytesIO:
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(
             buffer,
-            pagesize=landscape(A4),
+            pagesize=A4,
             rightMargin=20,
             leftMargin=20,
-            topMargin=20,
+            topMargin=25,
             bottomMargin=20
         )
 
-        # ثبت فونت فارسی
-        font_path = "assets/fonts/Vazirmatn-Regular.ttf"
-        font_name = "Helvetica"
-        if os.path.exists(font_path):
-            try:
-                pdfmetrics.registerFont(TTFont("Vazirmatn", font_path))
-                font_name = "Vazirmatn"
-            except Exception:
-                pass
-
         elements = []
         styles = getSampleStyleSheet()
-        
         title_style = ParagraphStyle(
-            'TitleStyle',
-            parent=styles['Normal'],
-            fontName=font_name,
-            fontSize=16,
-            leading=22,
-            alignment=1, # Center
-            textColor=colors.HexColor("#0F172A")
-        )
-        
-        cell_style = ParagraphStyle(
-            'CellStyle',
-            parent=styles['Normal'],
-            fontName=font_name,
-            fontSize=9,
-            leading=12,
-            alignment=1, # Center
-            textColor=colors.HexColor("#1E293B")
+            "TitleStyle",
+            parent=styles["Normal"],
+            alignment=1,
+            fontSize=15,
+            leading=18
         )
 
-        # تیتر گزارش
-        elements.append(Paragraph(cls._reshape("گزارش کاتالوگ و بارکد محصولات سامانه Product Hub"), title_style))
+        elements.append(Paragraph(cls._fix_text("کاتالوگ محصولات و بارکدها"), title_style))
         elements.append(Spacer(1, 15))
 
-        # ساختار جدول
-        headers = [
-            cls._reshape("تصویر بارکد"),
-            cls._reshape("حاشیه سود"),
-            cls._reshape("قیمت مصرف‌کننده"),
-            cls._reshape("تعداد در بسته"),
-            cls._reshape("قیمت خرید"),
-            cls._reshape("نام محصول"),
-            cls._reshape("ردیف")
-        ]
+        table_data = [[
+            cls._fix_text("تصویر بارکد"),
+            cls._fix_text("قیمت مصرف‌کننده"),
+            cls._fix_text("بسته‌بندی"),
+            cls._fix_text("قیمت پایه"),
+            cls._fix_text("کد بارکد"),
+            cls._fix_text("نام محصول")
+        ]]
 
-        table_data = [headers]
-
-        for idx, prod in enumerate(products, start=1):
-            # تولید بارکد برای PDF
-            b_format = BarcodeFormat.EAN13 if len(prod.barcode_value) in (12, 13) else BarcodeFormat.CODE128
-            b_config = BarcodeConfig(
-                title=prod.title,
-                code_value=prod.barcode_value,
-                format_type=b_format,
-                barcode_height_px=70,
-                title_font_size=14,
-                code_font_size=12,
-                margin=5
-            )
-            img_stream = BarcodeService.generate_barcode_image(b_config)
-            barcode_img = RLImage(img_stream, width=120, height=45)
+        for item in products:
+            img_stream = BarcodeService.generate_barcode_image(item["title"], str(item["barcode_value"]))
+            rl_img = ReportLabImage(img_stream, width=110, height=45)
 
             row = [
-                barcode_img,
-                Paragraph(f"%{prod.profit_margin_percent}", cell_style),
-                Paragraph(f"{int(prod.consumer_price):,} " + cls._reshape("تومان"), cell_style),
-                Paragraph(str(prod.units_per_pack), cell_style),
-                Paragraph(f"{int(prod.cost_price):,} " + cls._reshape("تومان"), cell_style),
-                Paragraph(cls._reshape(prod.title), cell_style),
-                Paragraph(str(idx), cell_style)
+                rl_img,
+                f"{float(item['consumer_price']):,.0f}",
+                str(item["units_per_pack"]),
+                f"{float(item['cost_price']):,.0f}",
+                str(item["barcode_value"]),
+                cls._fix_text(item["title"])
             ]
             table_data.append(row)
 
-        table = Table(table_data, colWidths=[130, 80, 110, 75, 110, 190, 45])
+        table = Table(table_data, colWidths=[120, 95, 60, 95, 90, 95])
         table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#1E293B")),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
-            ('TOPPADDING', (0, 0), (-1, 0), 8),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
-            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor("#F8FAFC")]),
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1E3A8A")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
+            ("TOPPADDING", (0, 0), (-1, 0), 6),
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#E5E7EB")),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F9FAFB")]),
         ]))
 
         elements.append(table)
