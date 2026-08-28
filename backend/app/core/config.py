@@ -1,40 +1,21 @@
-from functools import lru_cache
-from pydantic_settings import BaseSettings, SettingsConfigDict
-
+from pydantic_settings import BaseSettings
+from typing import List
 
 class Settings(BaseSettings):
-    PROJECT_NAME: str = "Product Hub"
-    API_V1_STR: str = "/api/v1"
+    DEBUG: bool = False
+    ENVIRONMENT: str = "production"
     
-    # Database Configurations
-    POSTGRES_SERVER: str = "localhost"
-    POSTGRES_PORT: int = 5432
-    POSTGRES_USER: str = "postgres"
-    POSTGRES_PASSWORD: str = "postgres"
-    POSTGRES_DB: str = "product_hub_db"
+    # Telegram Bot
+    TELEGRAM_BOT_TOKEN: str
+    TELEGRAM_SECRET_TOKEN: str = "super-secret-hex-token"
+    USE_WEBHOOK: bool = False
+    WEBHOOK_URL: str = "https://your-domain.com"
+    BOT_WEBHOOK_PATH: str = "/api/v1/bot/webhook"
     
-    # DB Pool Configurations
-    DB_POOL_SIZE: int = 20
-    DB_MAX_OVERFLOW: int = 10
-    DB_POOL_TIMEOUT: int = 30
-    
-    @property
-    def async_database_url(self) -> str:
-        return (
-            f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
-            f"@{self.POSTGRES_SERVER}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
-        )
+    # CORS
+    CORS_ALLOWED_ORIGINS: List[str] = ["*"]
 
-    model_config = SettingsConfigDict(
-        env_file=".env", 
-        env_file_encoding="utf-8", 
-        case_sensitive=True
-    )
+    class Config:
+        env_file = ".env"
 
-
-@lru_cache
-def get_settings() -> Settings:
-    return Settings()
-
-
-settings = get_settings()
+settings = Settings()

@@ -1,82 +1,84 @@
-import io
-from typing import Any, Dict, List
+from io import BytesIO
+from typing import List, Dict, Any
 from openpyxl import Workbook
-from openpyxl.drawing.image import Image as OpenpyxlImage
-from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+from openpyxl.drawing.image import Image as OpenPyXLImage
 from app.services.barcode_service import BarcodeService
 
 class ExcelExportService:
     @staticmethod
-    def create_products_sheet(products: List[Dict[str, Any]]) -> io.BytesIO:
+    def generate_product_catalog(products: List[Dict[str, Any]]) -> BytesIO:
         wb = Workbook()
         ws = wb.active
-        ws.title = "محصولات"
-        ws.views.sheetView[0].rightToLeft = True
+        ws.title = "کاتالوگ محصولات"
+        ws.sheet_view.rightToLeft = True
 
-        headers = [
-            "ردیف",
-            "نام کالا",
-            "قیمت پایه (تومان)",
-            "تعداد در بسته",
-            "قیمت مصرف‌کننده (تومان)",
-            "کد بارکد",
-            "تصویر بارکد"
-        ]
-        ws.append(headers)
-
-        header_fill = PatternFill(start_color="1E3A8A", end_color="1E3A8A", fill_type="solid")
+        # استایل‌بندی هدرها
+        header_fill = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
         header_font = Font(name="Tahoma", size=10, bold=True, color="FFFFFF")
+        cell_font = Font(name="Tahoma", size=9)
         align_center = Alignment(horizontal="center", vertical="center", wrap_text=True)
         thin_border = Border(
-            left=Side(style="thin", color="D1D5DB"),
-            right=Side(style="thin", color="D1D5DB"),
-            top=Side(style="thin", color="D1D5DB"),
-            bottom=Side(style="thin", color="D1D5DB")
+            left=Side(style='thin', color='D9D9D9'),
+            right=Side(style='thin', color='D9D9D9'),
+            top=Side(style='thin', color='D9D9D9'),
+            bottom=Side(style='thin', color='D9D9D9')
         )
 
-        for col_num in range(1, len(headers) + 1):
-            cell = ws.cell(row=1, column=col_num)
+        headers = ["ردیف", "نام کالا", "قیمت خرید (تومان)", "تعداد در بسته", "قیمت مصرف‌کننده (تومان)", "کد بارکد", "تصویر بارکد"]
+        ws.append(headers)
+
+        # تنظیم ارتفاع و رنگ هدر
+        ws.row_dimensions[1].height = 28
+        for col_idx in range(1, len(headers) + 1):
+            cell = ws.cell(row=1, column=col_idx)
             cell.fill = header_fill
             cell.font = header_font
             cell.alignment = align_center
-            cell.border = thin_border
 
-        ws.row_dimensions[1].height = 28
+        # عرض ستون‌ها
+        column_widths = {'A': 8, 'B': 30, 'C': 18, 'D': 14, 'E': 20, 'F': 18, 'G': 28}
+        for col_letter, width in column_widths.items():
+            ws.column_dimensions[col_letter].width = width
 
-        for row_idx, item in enumerate(products, start=2):
-            ws.row_dimensions[row_idx].height = 65
-            ws.append([
-                row_idx - 1,
-                item["title"],
-                float(item["cost_price"]),
-                int(item["units_per_pack"]),
-                float(item["consumer_price"]),
-                str(item["barcode_value"]),
-                ""
-            ])
+        # درج داده‌ها و بارکدها
+        for idx, item in enumerate(products, start=1):
+            row_num = idx + 1
+            ws.row_dimensions[row_num].height = 70  # فضای کافی برای تصویر بارکد
 
-            for col_idx in range(1, len(headers) + 1):
-                c = ws.cell(row=row_idx, column=col_idx)
-                c.alignment = align_center
-                c.border = thin_border
-                c.font = Font(name="Tahoma", size=9)
+            ws.cell(row=row_num, column=1, value=idx).alignment = align_center
+            ws.cell(row=row_num, column=2, value=item.get("title", "")).alignment = Alignment(horizontal="right", vertical="center")
+            
+            c_price = ws.cell(row=row_num, column=3, value=item.get("cost_price", 0))
+            c_price.number_format = '#,##0'
+            c_price.alignment = align_center
 
-            # تولید تصویر بارکد و درج در سلول
-            img_stream = BarcodeService.generate_barcode_image(item["title"], str(item["barcode_value"]))
-            img = OpenpyxlImage(img_stream)
-            img.width = 135
-            img.height = 60
-            ws.add_image(img, f"G{row_idx}")
+            ws.cell(row=row_num, column=4, value=item.get("units_per_pack", 1)).alignment = align_center
 
-        ws.column_dimensions["A"].width = 8
-        ws.column_dimensions["B"].width = 28
-        ws.column_dimensions["C"].width = 18
-        ws.column_dimensions["D"].width = 14
-        ws.column_dimensions["E"].width = 20
-        ws.column_dimensions["F"].width = 18
-        ws.column_dimensions["G"].width = 24
+            cons_price = ws.cell(row=row_num, column=5, value=item.get("consumer_price", 0))
+            cons_price.number_format = '#,##0'
+            cons_price.alignment = align_center
 
-        output = io.BytesIO()
+            ws.cell(row=row_num, column=6, value=str(item.get("barcode_value", ""))).alignment = align_center
+
+            for c in range(1, 8):
+                ws.cell(row=row_num, column=c).font = cell_font
+                ws.cell(row=row_num, column=c).border = thin_border
+
+            # ساخت و درج تصویر بارکد در ستون G
+            barcode_str = str(item.get("barcode_value", ""))
+            if barcode_str:
+                barcode_img_stream = BarcodeService.generate_barcode_image(
+                    title=item.get("title", ""),
+                    barcode_value=barcode_str
+                )
+                img = OpenPyXLImage(barcode_img_stream)
+                img.width = 170
+                img.height = 80
+                cell_address = f"G{row_num}"
+                ws.add_image(img, cell_address)
+
+        output = BytesIO()
         wb.save(output)
         output.seek(0)
         return output

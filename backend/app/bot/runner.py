@@ -1,22 +1,23 @@
 import asyncio
 import logging
+import sys
+
 from app.bot.loader import bot, dp
-from app.bot.handlers import bot_router
-from app.core.database import engine, Base
+from app.bot.handlers import router as bot_router
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
-logger = logging.getLogger("product_hub.bot_runner")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    stream=sys.stdout
+)
+logger = logging.getLogger(__name__)
 
-async def main():
-    logger.info("در حال آماده‌سازی پایگاه داده...")
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-
+async def main() -> None:
     dp.include_router(bot_router)
-
-    # پاک‌سازی وب‌هوک قبلی جهت شروع دریافت پیام‌ها به صورت Polling
+    logger.info("Starting Telegram Bot in Polling mode...")
+    
+    # حذف وب‌هوک‌های قبلی در صورت وجود
     await bot.delete_webhook(drop_pending_updates=True)
-    logger.info("بات با موفقیت به حالت Polling متصل شد. آماده دریافت پیام...")
     
     try:
         await dp.start_polling(bot)
