@@ -3,7 +3,6 @@ from app.api.v1.endpoints import products
 
 api_router = APIRouter()
 
-# اتصال روتر محصولات با پیشوند و تگ مشخص
 api_router.include_router(
     products.router,
     prefix="/products",

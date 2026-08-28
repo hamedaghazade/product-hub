@@ -1,42 +1,69 @@
-from pydantic import BaseModel, Field, field_validator
-import re
+from datetime import datetime
+from decimal import Decimal
+from typing import Generic, Optional, Sequence, TypeVar
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-def calculate_ean13_checksum(digits12: str) -> str:
-    """محاسبه رقم کنترل برای ۱۲ رقم اول EAN-13"""
-    total = 0
-    for idx, char in enumerate(digits12):
-        num = int(char)
-        total += num if idx % 2 == 0 else num * 3
-    checksum = (10 - (total % 10)) % 10
-    return str(checksum)
+T = TypeVar("T")
 
-class ProductCreate(BaseModel):
-    title: str = Field(..., min_length=2, max_length=200, description="نام محصول به فارسی یا انگلیسی")
-    cost_price: float = Field(..., gt=0, description="قیمت خرید")
-    consumer_price: float = Field(..., gt=0, description="قیمت مصرف‌کننده")
-    units_per_pack: int = Field(1, gt=0, description="تعداد در بسته")
-    barcode_value: str = Field(..., description="کد بارکد (EAN-13 یا Code128)")
+
+class ProductBase(BaseModel):
+    title: str = Field(..., min_length=2, max_length=255, description="نام محصول")
+    cost_price: Decimal = Field(..., ge=0, decimal_places=2, description="قیمت خرید")
+    consumer_price: Decimal = Field(..., ge=0, decimal_places=2, description="قیمت مصرف‌کننده")
+    units_per_pack: int = Field(default=1, gt=0, description="تعداد در بسته")
+    barcode_value: str = Field(..., min_length=3, max_length=64, description="مقدار بارکد")
 
     @field_validator("barcode_value")
     @classmethod
-    def validate_barcode(cls, v: str) -> str:
-        clean_value = re.sub(r"\s+", "", v)
-        if clean_value.isdigit() and len(clean_value) in (12, 13):
-            # اعتبارسنجی استاندارد EAN-13
-            if len(clean_value) == 12:
-                clean_value += calculate_ean13_checksum(clean_value)
-            else:
-                expected_checksum = calculate_ean13_checksum(clean_value[:12])
-                if clean_value[12] != expected_checksum:
-                    raise ValueError(f"رقم کنترلی بارکد EAN-13 اشتباه است. مقدار صحیح باید {expected_checksum} باشد.")
-        elif not (3 <= len(clean_value) <= 50):
-            raise ValueError("طول کد بارکد استاندارد نیست.")
-        return clean_value
+    def validate_barcode(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("مقدار بارکد نمی‌تواند خالی باشد.")
+        return cleaned
 
-    @field_validator("consumer_price")
+    @field_validator("title")
     @classmethod
-    def validate_prices(cls, v: float, info) -> float:
-        if "cost_price" in info.data and v < info.data["cost_price"]:
-            # اخطار منطقی برای قیمت‌گذاری
-            pass
-        return v
+    def validate_title(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("نام کالا الزامی است.")
+        return cleaned
+
+
+class ProductCreate(ProductBase):
+    pass
+
+
+class ProductUpdate(BaseModel):
+    title: Optional[str] = Field(None, min_length=2, max_length=255)
+    cost_price: Optional[Decimal] = Field(None, ge=0, decimal_places=2)
+    consumer_price: Optional[Decimal] = Field(None, ge=0, decimal_places=2)
+    units_per_pack: Optional[int] = Field(None, gt=0)
+    barcode_value: Optional[str] = Field(None, min_length=3, max_length=64)
+
+
+class ProductResponse(ProductBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ProductFilterParams(BaseModel):
+    search: Optional[str] = Field(None, description="جستجو در عنوان و بارکد")
+    min_cost_price: Optional[Decimal] = Field(None, ge=0)
+    max_cost_price: Optional[Decimal] = Field(None, ge=0)
+    min_consumer_price: Optional[Decimal] = Field(None, ge=0)
+    max_consumer_price: Optional[Decimal] = Field(None, ge=0)
+    barcode: Optional[str] = Field(None)
+    page: int = Field(default=1, ge=1)
+    page_size: int = Field(default=20, ge=1, le=100)
+
+
+class PaginatedResponse(BaseModel, Generic[T]):
+    items: Sequence[T]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int

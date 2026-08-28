@@ -1,91 +1,21 @@
-version: '3.8'
-
 services:
   postgres:
-    image: postgres:15-alpine
-    container_name: producthub_db
+    image: postgres:16-alpine
+    container_name: product-hub-postgres
     restart: always
     environment:
-      POSTGRES_USER: ${DB_USER:-hubuser}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-SuperSecretDBPass2026}
-      POSTGRES_DB: ${DB_NAME:-producthub}
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: product_hub_db
+    ports:
+      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    networks:
-      - internal_network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-hubuser} -d ${DB_NAME:-producthub}"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d product_hub_db"]
       interval: 5s
       timeout: 5s
       retries: 5
 
-  redis:
-    image: redis:7-alpine
-    container_name: producthub_redis
-    restart: always
-    volumes:
-      - redis_data:/data
-    networks:
-      - internal_network
-
-  backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    container_name: producthub_api
-    restart: always
-    env_file:
-      - .env
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_started
-    networks:
-      - internal_network
-
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    container_name: producthub_frontend_build
-    volumes:
-      - frontend_dist:/dist
-
-  nginx:
-    image: nginx:1.25-alpine
-    container_name: producthub_nginx
-    restart: always
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - frontend_dist:/usr/share/nginx/html:ro
-      - certbot_conf:/etc/letsencrypt
-      - certbot_www:/var/www/certbot
-    depends_on:
-      - backend
-      - frontend
-    networks:
-      - internal_network
-
-  certbot:
-    image: certbot/certbot:latest
-    container_name: producthub_certbot
-    restart: unless-stopped
-    volumes:
-      - certbot_conf:/etc/letsencrypt
-      - certbot_www:/var/www/certbot
-    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12d & wait $${!}; done;'"
-
-networks:
-  internal_network:
-    driver: bridge
-
 volumes:
   postgres_data:
-  redis_data:
-  frontend_dist:
-  certbot_conf:
-  certbot_www:
